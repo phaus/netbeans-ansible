@@ -2,9 +2,13 @@ package de.javastream.netbeans.ansible;
 
 import java.awt.Image;
 import java.beans.PropertyChangeListener;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import javax.swing.Action;
 import javax.swing.Icon;
 import javax.swing.ImageIcon;
+import javax.swing.JSeparator;
 import org.netbeans.api.annotations.common.StaticResource;
 import org.netbeans.api.project.Project;
 import org.netbeans.api.project.ProjectInformation;
@@ -12,9 +16,14 @@ import org.netbeans.spi.project.ProjectState;
 import org.netbeans.spi.project.ui.LogicalViewProvider;
 import org.netbeans.spi.project.ui.support.CommonProjectActions;
 import org.netbeans.spi.project.ui.support.NodeFactorySupport;
+import org.openide.ErrorManager;
 import org.openide.filesystems.FileObject;
+import org.openide.filesystems.FileSystem;
+import org.openide.filesystems.Repository;
 import org.openide.loaders.DataFolder;
+import org.openide.loaders.DataObject;
 import org.openide.loaders.DataObjectNotFoundException;
+import org.openide.loaders.FolderLookup;
 import org.openide.nodes.AbstractNode;
 import org.openide.nodes.Children;
 import org.openide.nodes.FilterNode;
@@ -48,7 +57,7 @@ public class AnsibleProject implements Project {
     @Override
     public Lookup getLookup() {
         if (lkp == null) {
-            lkp = Lookups.fixed(new Object[] {
+            lkp = Lookups.fixed(new Object[]{
                 this,
                 new Info(),
                 new AnsibleProjectLogicalView(this)
@@ -124,26 +133,55 @@ public class AnsibleProject implements Project {
             final AnsibleProject project;
 
             public ProjectNode(Node node, AnsibleProject project) throws DataObjectNotFoundException {
-                super(node, 
-                    NodeFactorySupport.createCompositeChildren( project, "Projects/de-javastream-ansible/Nodes"),
-                    new ProxyLookup(
-                            new Lookup[]{
-                                Lookups.singleton(project), 
-                                node.getLookup()
-                            }
-                    )
+                super(node,
+                        NodeFactorySupport.createCompositeChildren(project, "Projects/de-javastream-ansible/Nodes"),
+                        new ProxyLookup(
+                                new Lookup[]{
+                                    Lookups.singleton(project),
+                                    node.getLookup(),}
+                        )
                 );
                 this.project = project;
             }
 
             @Override
             public Action[] getActions(boolean arg0) {
-                return new Action[]{
-                    CommonProjectActions.newFileAction(),
-                    CommonProjectActions.copyProjectAction(),
-                    CommonProjectActions.deleteProjectAction(),
-                    CommonProjectActions.closeProjectAction()
-                };
+                List<Action> actions = new ArrayList<Action>();
+                actions.add(CommonProjectActions.newFileAction());
+                actions.add(CommonProjectActions.copyProjectAction());
+                actions.add(CommonProjectActions.deleteProjectAction());
+                actions.add(CommonProjectActions.customizeProjectAction());
+                actions.add(CommonProjectActions.setProjectConfigurationAction());
+                
+                // honor 57874 contact
+                try {
+                    Repository repository = Repository.getDefault();
+                    FileSystem sfs = repository.getDefaultFileSystem();
+                    FileObject fo = sfs.findResource("Projects/Actions");  // NOI18N
+                    if (fo != null) {
+                        DataObject dobj = DataObject.find(fo);
+                        FolderLookup actionRegistry = new FolderLookup((DataFolder) dobj);
+                        Lookup.Template query = new Lookup.Template(Object.class);
+                        Lookup lookup = actionRegistry.getLookup();
+                        Iterator it = lookup.lookup(query).allInstances().iterator();
+                        if (it.hasNext()) {
+                            actions.add(null);
+                        }
+                        while (it.hasNext()) {
+                            Object next = it.next();
+                            if (next instanceof Action) {
+                                actions.add((Action) next);
+                            } else if (next instanceof JSeparator) {
+                                actions.add(null);
+                            }
+                        }
+                    }
+                } catch (DataObjectNotFoundException ex) {
+                    // data folder for exiting fileobject expected
+                    ErrorManager.getDefault().notify(ex);
+                }
+                actions.add(CommonProjectActions.closeProjectAction());
+                return actions.toArray(new Action[actions.size()]);
             }
 
             @Override
